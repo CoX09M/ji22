@@ -79,12 +79,14 @@ jobs:
           sed -i 's/omni_ML-JI22-M7SQC_Plus/omni_ML_JI22_M7SQC_Plus/g' \
             AndroidProducts.mk
 
-      - name: Build TWRP
+         - name: Build TWRP CARALHO
         run: |
           cd twrp
 
           export ALLOW_MISSING_DEPENDENCIES=true
-          export PATH="/usr/bin:$PATH"
+
+          sed -i 's/except IOError, ES.ParseError:/except (IOError, ES.ParseError):/' \
+            vendor/omni/build/tools/roomservice.py
 
           source build/envsetup.sh
 
