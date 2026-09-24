@@ -9,20 +9,25 @@ jobs:
 
     steps:
 
+      # ============================================================
+      # CHECKOUT
+      # ============================================================
+
       - name: Checkout
         uses: actions/checkout@v4
 
       # ============================================================
-      # CACHE DO SOURCE DO TWRP
+      # CACHE DO SOURCE
       # ============================================================
 
-      - name: Restore TWRP source cache
+      - name: Restore TWRP cache
+        id: twrp-cache
         uses: actions/cache@v4
         with:
           path: |
             twrp
             ~/.repoconfig
-          key: twrp-8.1-ML-JI22-${{ hashFiles('.github/workflows/build.yml') }}
+          key: twrp-8.1-ML-JI22-v1
           restore-keys: |
             twrp-8.1-ML-JI22-
 
@@ -54,8 +59,32 @@ jobs:
             unzip \
             fontconfig \
             cpio \
-            python3 \
             openjdk-8-jdk
+
+      # ============================================================
+      # PYTHON 2
+      # ============================================================
+
+      - name: Install Python 2
+        run: |
+          cd /tmp
+
+          git clone --depth=1 \
+            https://github.com/pyenv/pyenv.git \
+            pyenv
+
+          export PYENV_ROOT="/tmp/pyenv"
+          export PATH="$PYENV_ROOT/bin:$PATH"
+
+          eval "$(pyenv init -)"
+
+          pyenv install -s 2.7.18
+          pyenv global 2.7.18
+
+          echo "$PYENV_ROOT/shims" >> "$GITHUB_PATH"
+
+          echo "Python version:"
+          python --version
 
       # ============================================================
       # REPO
@@ -76,17 +105,19 @@ jobs:
           echo "$HOME/bin" >> "$GITHUB_PATH"
 
       # ============================================================
-      # PREPARAR SOURCE
+      # TWRP SOURCE
       # ============================================================
 
       - name: Initialize or update TWRP source
         run: |
+
           if [ ! -d "twrp/.repo" ]; then
 
-            echo "TWRP source não encontrado no cache."
-            echo "Inicializando pela primeira vez..."
+            echo "TWRP não está no cache."
+            echo "Inicializando source..."
 
             mkdir -p twrp
+
             cd twrp
 
             repo init \
@@ -97,30 +128,28 @@ jobs:
           else
 
             echo "TWRP encontrado no cache."
-            echo "Pulando repo init."
+
+            cd twrp
 
           fi
 
-          cd twrp
-
-          if [ ! -d ".repo/projects" ]; then
-            echo "Cache incompleto. Sincronizando..."
-          fi
-
-          repo sync -j4 --force-sync --no-clone-bundle
+          repo sync \
+            -j4 \
+            --force-sync \
+            --no-clone-bundle
 
       # ============================================================
       # DEVICE TREE
       # ============================================================
 
-      - name: Add or update device tree
+      - name: Add device tree
         run: |
+
           DEVICE_DIR="twrp/device/multilaser/ML-JI22-M7SQC_Plus"
 
           if [ ! -d "$DEVICE_DIR/.git" ]; then
 
             echo "Device tree não encontrado."
-            echo "Clonando..."
 
             mkdir -p twrp/device/multilaser
 
@@ -131,29 +160,29 @@ jobs:
 
           else
 
-            echo "Device tree encontrado no cache."
-            echo "Pulando clone."
+            echo "Device tree encontrado."
 
           fi
 
       # ============================================================
-      # CORRIGIR DEVICE TREE
+      # CORREÇÃO DO NOME DO PRODUTO
       # ============================================================
 
-      - name: Fix device tree
+      - name: Fix product name
         run: |
+
           cd twrp/device/multilaser/ML-JI22-M7SQC_Plus
 
           OLD_NAME="omni_ML-JI22-M7SQC_Plus"
           NEW_NAME="omni_ML_JI22_M7SQC_Plus"
 
-          echo "Criando product makefile compatível..."
+          echo "Criando makefile compatível..."
 
-          if [ ! -f "${NEW_NAME}.mk" ]; then
-            cp "${OLD_NAME}.mk" "${NEW_NAME}.mk"
-          fi
+          cp \
+            "${OLD_NAME}.mk" \
+            "${NEW_NAME}.mk"
 
-          echo "Corrigindo nome do produto..."
+          echo "Substituindo nome antigo..."
 
           grep -RIl \
             "${OLD_NAME}" . \
@@ -161,46 +190,73 @@ jobs:
             "s/${OLD_NAME}/${NEW_NAME}/g"
 
           echo
-          echo "Verificando nome antigo..."
+          echo "Verificando referências antigas..."
 
           if grep -RIn \
             "${OLD_NAME}" .; then
 
-            echo "ERRO: ainda existem referências ao nome antigo."
+            echo "ERRO: nome antigo ainda existe."
 
             exit 1
 
-          else
-
-            echo "OK: nenhuma referência antiga encontrada."
-
           fi
 
+          echo "OK: nenhuma referência antiga encontrada."
+
       # ============================================================
-      # CORRIGIR PYTHON LEGADO
+      # CORREÇÃO PYTHON LEGADO DO ROOM SERVICE
       # ============================================================
 
-      - name: Fix legacy Python syntax
+      - name: Fix roomservice Python syntax
         run: |
+
           cd twrp
 
           ROOM_SERVICE="vendor/omni/build/tools/roomservice.py"
 
-          if grep -q \
-            'except IOError, ES.ParseError:' \
-            "$ROOM_SERVICE"; then
+          echo "Verificando roomservice.py..."
 
-            echo "Corrigindo sintaxe Python 2..."
+          sed -i \
+            's/except IOError, ES.ParseError:/except (IOError, ES.ParseError):/' \
+            "$ROOM_SERVICE"
 
-            sed -i \
-              's/except IOError, ES.ParseError:/except (IOError, ES.ParseError):/' \
-              "$ROOM_SERVICE"
+          python -m py_compile \
+            "$ROOM_SERVICE"
 
-          else
+          echo "roomservice.py OK."
 
-            echo "Sintaxe problemática não encontrada."
+      # ============================================================
+      # SALVAR CACHE ANTES DO BUILD
+      # ============================================================
 
-          fi
+      - name: Save source cache
+        if: steps.twrp-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            twrp
+            ~/.repoconfig
+          key: twrp-8.1-ML-JI22-v1
+
+      # ============================================================
+      # PREPARAR BUILD
+      # ============================================================
+
+      - name: Prepare build environment
+        run: |
+
+          cd twrp
+
+          export ALLOW_MISSING_DEPENDENCIES=true
+
+          source build/envsetup.sh
+
+          echo
+          echo "======================================"
+          echo "Verificando lunch"
+          echo "======================================"
+
+          lunch omni_ML_JI22_M7SQC_Plus-eng
 
       # ============================================================
       # BUILD
@@ -208,45 +264,60 @@ jobs:
 
       - name: Build TWRP
         run: |
+
           cd twrp
 
           export ALLOW_MISSING_DEPENDENCIES=true
 
           source build/envsetup.sh
 
-          export TARGET_PRODUCT=omni_ML_JI22_M7SQC_Plus
-          export TARGET_BUILD_VARIANT=eng
-          export TARGET_BUILD_TYPE=release
+          lunch omni_ML_JI22_M7SQC_Plus-eng
 
+          echo
           echo "======================================"
-          echo "TARGET_PRODUCT=$TARGET_PRODUCT"
-          echo "TARGET_BUILD_VARIANT=$TARGET_BUILD_VARIANT"
-          echo "TARGET_BUILD_TYPE=$TARGET_BUILD_TYPE"
+          echo "BUILDING RECOVERY"
           echo "======================================"
 
           mka recoveryimage
 
       # ============================================================
-      # VERIFICAR RECOVERY
+      # VERIFICAR RESULTADO
       # ============================================================
 
       - name: Check recovery image
         run: |
+
           RECOVERY="twrp/out/target/product/ML-JI22-M7SQC_Plus/recovery.img"
 
-          echo "Verificando recovery..."
+          echo "Procurando:"
+          echo "$RECOVERY"
 
           if [ ! -f "$RECOVERY" ]; then
+
+            echo
             echo "ERRO: recovery.img não foi criado."
+
+            echo
+            echo "Conteúdo do diretório de saída:"
+
+            find \
+              twrp/out/target/product/ML-JI22-M7SQC_Plus \
+              -maxdepth 2 \
+              -type f \
+              2>/dev/null \
+              | sort
+
             exit 1
+
           fi
 
           echo
           echo "======================================"
-          echo "TWRP GERADO COM SUCESSO"
+          echo "TWRP GERADO"
           echo "======================================"
 
           ls -lh "$RECOVERY"
+
           file "$RECOVERY"
 
       # ============================================================
