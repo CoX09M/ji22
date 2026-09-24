@@ -8,6 +8,7 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -33,35 +34,33 @@ jobs:
             xsltproc \
             unzip \
             fontconfig \
-            python2 \
-            openjdk-8-jdk \
-            cpio
-
-      - name: Configure Python 2
-        run: |
-          sudo ln -sf /usr/bin/python2 /usr/local/bin/python
-          python --version
+            cpio \
+            python3 \
+            openjdk-8-jdk
 
       - name: Install repo
         run: |
           mkdir -p "$HOME/bin"
-          curl https://storage.googleapis.com/git-repo-downloads/repo \
-            > "$HOME/bin/repo"
+          curl -L https://storage.googleapis.com/git-repo-downloads/repo \
+            -o "$HOME/bin/repo"
           chmod a+x "$HOME/bin/repo"
           echo "$HOME/bin" >> "$GITHUB_PATH"
 
       - name: Initialize TWRP source
         run: |
-          mkdir twrp
+          mkdir -p twrp
           cd twrp
+
           repo init --depth=1 \
             -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git \
             -b twrp-8.1
+
           repo sync -j2 --force-sync
 
       - name: Add device tree
         run: |
           mkdir -p twrp/device/multilaser
+
           git clone \
             -b 'M7SQC_Plus-user-8.1.0-OPM1.171019.026-20210311-release-keys,user/release-keys' \
             https://github.com/twrpdtgen/android_device_multilaser_ML-JI22-M7SQC_Plus.git \
@@ -71,22 +70,30 @@ jobs:
         run: |
           cd twrp/device/multilaser/ML-JI22-M7SQC_Plus
 
-          cp omni_ML-JI22-M7SQC_Plus.mk omni_ML_JI22_M7SQC_Plus.mk
+          cp omni_ML-JI22-M7SQC_Plus.mk \
+             omni_ML_JI22_M7SQC_Plus.mk
 
-          sed -i 's/omni_ML-JI22-M7SQC_Plus/omni_ML_JI22_M7SQC_Plus/g' \
+          sed -i \
+            's/omni_ML-JI22-M7SQC_Plus/omni_ML_JI22_M7SQC_Plus/g' \
             omni_ML_JI22_M7SQC_Plus.mk
 
-          sed -i 's/omni_ML-JI22-M7SQC_Plus/omni_ML_JI22_M7SQC_Plus/g' \
+          sed -i \
+            's/omni_ML-JI22-M7SQC_Plus/omni_ML_JI22_M7SQC_Plus/g' \
             AndroidProducts.mk
 
-         - name: Build TWRP CARALHO
+      - name: Fix old Python syntax
+        run: |
+          cd twrp
+
+          sed -i \
+            's/except IOError, ES.ParseError:/except (IOError, ES.ParseError):/' \
+            vendor/omni/build/tools/roomservice.py
+
+      - name: Build TWRP
         run: |
           cd twrp
 
           export ALLOW_MISSING_DEPENDENCIES=true
-
-          sed -i 's/except IOError, ES.ParseError:/except (IOError, ES.ParseError):/' \
-            vendor/omni/build/tools/roomservice.py
 
           source build/envsetup.sh
 
@@ -94,10 +101,13 @@ jobs:
 
           mka recoveryimage
 
-      - name: Check recovery image
+      - name: Check recovery
         run: |
-          ls -lh out/target/product/ML-JI22-M7SQC_Plus/recovery.img
-          file out/target/product/ML-JI22-M7SQC_Plus/recovery.img
+          ls -lh \
+            out/target/product/ML-JI22-M7SQC_Plus/recovery.img
+
+          file \
+            out/target/product/ML-JI22-M7SQC_Plus/recovery.img
 
       - name: Upload recovery.img
         uses: actions/upload-artifact@v4
