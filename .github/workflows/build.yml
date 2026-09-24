@@ -89,7 +89,7 @@ jobs:
             's/except IOError, ES.ParseError:/except (IOError, ES.ParseError):/' \
             vendor/omni/build/tools/roomservice.py
 
-      - name: Build TWRP
+      - name: Build TWRP (nao da erro fdp)
         run: |
           cd twrp
 
