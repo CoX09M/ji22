@@ -41,9 +41,13 @@ jobs:
       - name: Install repo
         run: |
           mkdir -p "$HOME/bin"
-          curl -L https://storage.googleapis.com/git-repo-downloads/repo \
+
+          curl -L \
+            https://storage.googleapis.com/git-repo-downloads/repo \
             -o "$HOME/bin/repo"
+
           chmod a+x "$HOME/bin/repo"
+
           echo "$HOME/bin" >> "$GITHUB_PATH"
 
       - name: Initialize TWRP source
@@ -51,7 +55,8 @@ jobs:
           mkdir -p twrp
           cd twrp
 
-          repo init --depth=1 \
+          repo init \
+            --depth=1 \
             -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git \
             -b twrp-8.1
 
@@ -66,30 +71,119 @@ jobs:
             https://github.com/twrpdtgen/android_device_multilaser_ML-JI22-M7SQC_Plus.git \
             twrp/device/multilaser/ML-JI22-M7SQC_Plus
 
-      - name: Fix product name
+      - name: Fix device tree
         run: |
           cd twrp/device/multilaser/ML-JI22-M7SQC_Plus
 
-          cp omni_ML-JI22-M7SQC_Plus.mk \
-             omni_ML_JI22_M7SQC_Plus.mk
+          OLD_NAME="omni_ML-JI22-M7SQC_Plus"
+          NEW_NAME="omni_ML_JI22_M7SQC_Plus"
 
-          sed -i \
-            's/omni_ML-JI22-M7SQC_Plus/omni_ML_JI22_M7SQC_Plus/g' \
-            omni_ML_JI22_M7SQC_Plus.mk
+          echo "Creating product makefile..."
 
-          sed -i \
-            's/omni_ML-JI22-M7SQC_Plus/omni_ML_JI22_M7SQC_Plus/g' \
-            AndroidProducts.mk
+          cp "${OLD_NAME}.mk" "${NEW_NAME}.mk"
 
-      - name: Fix old Python syntax
+          echo "Replacing old product name in device tree..."
+
+          grep -RIl \
+            "${OLD_NAME}" . \
+            | xargs -r sed -i \
+            "s/${OLD_NAME}/${NEW_NAME}/g"
+
+          echo
+          echo "=== Checking for remaining old product names ==="
+
+          if grep -RIn \
+            "${OLD_NAME}" .; then
+
+            echo
+            echo "ERROR: old product name still exists!"
+            exit 1
+
+          else
+
+            echo "OK: no old product name found."
+
+          fi
+
+          echo
+          echo "=== Device tree files ==="
+
+          find . -maxdepth 2 -type f | sort
+
+      - name: Fix legacy Python syntax
         run: |
           cd twrp
 
-          sed -i \
-            's/except IOError, ES.ParseError:/except (IOError, ES.ParseError):/' \
-            vendor/omni/build/tools/roomservice.py
+          ROOM_SERVICE="vendor/omni/build/tools/roomservice.py"
 
-      - name: Build TWRP (nao da erro fdp)
+          echo "Checking roomservice.py..."
+
+          if grep -q \
+            'except IOError, ES.ParseError:' \
+            "$ROOM_SERVICE"; then
+
+            echo "Fixing Python 2 exception syntax..."
+
+            sed -i \
+              's/except IOError, ES.ParseError:/except (IOError, ES.ParseError):/' \
+              "$ROOM_SERVICE"
+
+          fi
+
+          echo
+          echo "Checking for remaining incompatible exception syntax..."
+
+          if grep -nE \
+            'except [A-Za-z0-9_.]+, [A-Za-z0-9_.]+:' \
+            "$ROOM_SERVICE"; then
+
+            echo
+            echo "WARNING: possible Python 2 exception syntax remains."
+
+          else
+
+            echo "OK: no obvious old exception syntax found."
+
+          fi
+
+      - name: Verify device configuration
+        run: |
+          cd twrp
+
+          echo "======================================"
+          echo "AndroidProducts.mk"
+          echo "======================================"
+
+          cat \
+            device/multilaser/ML-JI22-M7SQC_Plus/AndroidProducts.mk
+
+          echo
+          echo "======================================"
+          echo "vendorsetup.sh"
+          echo "======================================"
+
+          cat \
+            device/multilaser/ML-JI22-M7SQC_Plus/vendorsetup.sh
+
+          echo
+          echo "======================================"
+          echo "Product Makefile"
+          echo "======================================"
+
+          cat \
+            device/multilaser/ML-JI22-M7SQC_Plus/omni_ML_JI22_M7SQC_Plus.mk
+
+          echo
+          echo "======================================"
+          echo "Searching device tree"
+          echo "======================================"
+
+          grep -RIn \
+            "omni_ML_JI22_M7SQC_Plus" \
+            device/multilaser/ML-JI22-M7SQC_Plus \
+            || true
+
+      - name: Build TWRP
         run: |
           cd twrp
 
@@ -97,20 +191,44 @@ jobs:
 
           source build/envsetup.sh
 
+          echo
+          echo "======================================"
+          echo "Running lunch"
+          echo "======================================"
+
           lunch omni_ML_JI22_M7SQC_Plus-eng
+
+          echo
+          echo "======================================"
+          echo "Building recovery"
+          echo "======================================"
 
           mka recoveryimage
 
-      - name: Check recovery
+      - name: Check recovery image
         run: |
-          ls -lh \
-            out/target/product/ML-JI22-M7SQC_Plus/recovery.img
+          RECOVERY="twrp/out/target/product/ML-JI22-M7SQC_Plus/recovery.img"
 
-          file \
-            out/target/product/ML-JI22-M7SQC_Plus/recovery.img
+          echo "Checking:"
+          echo "$RECOVERY"
+
+          if [ ! -f "$RECOVERY" ]; then
+            echo "ERROR: recovery.img was not generated."
+            exit 1
+          fi
+
+          echo
+          echo "======================================"
+          echo "RECOVERY IMAGE CREATED"
+          echo "======================================"
+
+          ls -lh "$RECOVERY"
+
+          file "$RECOVERY"
 
       - name: Upload recovery.img
         uses: actions/upload-artifact@v4
         with:
           name: TWRP-ML-JI22
           path: twrp/out/target/product/ML-JI22-M7SQC_Plus/recovery.img
+          if-no-files-found: error
