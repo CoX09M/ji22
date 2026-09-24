@@ -37,6 +37,11 @@ jobs:
             openjdk-8-jdk \
             cpio
 
+      - name: Configure Python 2
+        run: |
+          sudo ln -sf /usr/bin/python2 /usr/local/bin/python
+          python --version
+
       - name: Install repo
         run: |
           mkdir -p "$HOME/bin"
@@ -62,7 +67,7 @@ jobs:
             https://github.com/twrpdtgen/android_device_multilaser_ML-JI22-M7SQC_Plus.git \
             twrp/device/multilaser/ML-JI22-M7SQC_Plus
 
-      - name: Fix product name for Android 8.1
+      - name: Fix product name
         run: |
           cd twrp/device/multilaser/ML-JI22-M7SQC_Plus
 
@@ -77,9 +82,14 @@ jobs:
       - name: Build TWRP
         run: |
           cd twrp
+
           export ALLOW_MISSING_DEPENDENCIES=true
+          export PATH="/usr/bin:$PATH"
+
           source build/envsetup.sh
+
           lunch omni_ML_JI22_M7SQC_Plus-eng
+
           mka recoveryimage
 
       - name: Check recovery image
