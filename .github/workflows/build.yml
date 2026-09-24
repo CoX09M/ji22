@@ -39,11 +39,11 @@ jobs:
 
       - name: Install repo
         run: |
-          mkdir -p $HOME/bin
+          mkdir -p "$HOME/bin"
           curl https://storage.googleapis.com/git-repo-downloads/repo \
-            > $HOME/bin/repo
-          chmod a+x $HOME/bin/repo
-          echo "$HOME/bin" >> $GITHUB_PATH
+            > "$HOME/bin/repo"
+          chmod a+x "$HOME/bin/repo"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
 
       - name: Initialize TWRP source
         run: |
@@ -62,13 +62,30 @@ jobs:
             https://github.com/twrpdtgen/android_device_multilaser_ML-JI22-M7SQC_Plus.git \
             twrp/device/multilaser/ML-JI22-M7SQC_Plus
 
+      - name: Fix product name for Android 8.1
+        run: |
+          cd twrp/device/multilaser/ML-JI22-M7SQC_Plus
+
+          cp omni_ML-JI22-M7SQC_Plus.mk omni_ML_JI22_M7SQC_Plus.mk
+
+          sed -i 's/omni_ML-JI22-M7SQC_Plus/omni_ML_JI22_M7SQC_Plus/g' \
+            omni_ML_JI22_M7SQC_Plus.mk
+
+          sed -i 's/omni_ML-JI22-M7SQC_Plus/omni_ML_JI22_M7SQC_Plus/g' \
+            AndroidProducts.mk
+
       - name: Build TWRP
         run: |
           cd twrp
           export ALLOW_MISSING_DEPENDENCIES=true
           source build/envsetup.sh
-          lunch omni_ML-JI22-M7SQC_Plus-eng
+          lunch omni_ML_JI22_M7SQC_Plus-eng
           mka recoveryimage
+
+      - name: Check recovery image
+        run: |
+          ls -lh out/target/product/ML-JI22-M7SQC_Plus/recovery.img
+          file out/target/product/ML-JI22-M7SQC_Plus/recovery.img
 
       - name: Upload recovery.img
         uses: actions/upload-artifact@v4
